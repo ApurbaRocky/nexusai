@@ -27,10 +27,12 @@ import {
   LogOut,
   Trash2,
   Sparkles,
+  Code2,
 } from "lucide-react";
 
 const NAV = [
   { href: "/chat", label: "Chat", icon: MessageSquare },
+  { href: "/coding", label: "Coding", icon: Code2 },
   { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/research", label: "Research", icon: FlaskConical },
   { href: "/documents", label: "Documents", icon: FileText },

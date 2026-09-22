@@ -49,6 +49,7 @@ model User {
   securityLabSessions    SecurityLabSession[]
   codingWorkspaces       CodingWorkspace[]
   codingTasks            CodingTask[]
+  orchestrationTasks     OrchestrationTask[]
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
 }
@@ -102,6 +103,7 @@ model Project {
   reports          Report[]
   securityScans    SecurityScan[]
   securityTargets  SecurityTarget[]
+  orchestrationTasks OrchestrationTask[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
@@ -1053,4 +1055,235 @@ model GitOperation {
   createdAt   DateTime        @default(now())
 
   @@index([workspaceId])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 7 — Multi-Agent Orchestration
+// ---------------------------------------------------------------------------
+
+model OrchestrationTask {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId      String?
+  project        Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  conversationId String?
+  title          String
+  goal           String
+  status         String    @default("draft") // draft, planning, ready, running, waiting, waiting_approval, paused, completed, failed, cancelled, blocked
+  priority       String    @default("normal") // low, normal, high
+  risk           String    @default("read_only") // read_only, low_risk, write, command_execution, external_action, high_risk
+  nodeCount      Int       @default(0)
+  progress       Int       @default(0) // 0-100
+  plan           String? // JSON: TaskPlan (goal, steps, agents, estimatedSteps)
+  context        String? // JSON: input context + references
+  input          String    @default("")
+  budget         String? // JSON: BudgetLimits
+  budgetUsage    String? // JSON: BudgetUsage
+  result         String? // JSON: FinalReport
+  error          String?
+  checkpointRef  String?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  nodes           OrchestrationNode[]
+  nodeDependencies TaskDependency[]
+  events          TaskEvent[]
+  messages        AgentMessage[]
+  approvals       TaskApproval[]
+  artifacts       TaskArtifact[]
+  checkpoints     TaskCheckpoint[]
+  memories        TaskMemory[]
+  questions       TaskQuestion[]
+  runs            TaskRun[]
+
+  @@index([userId, status])
+  @@index([userId, updatedAt])
+  @@index([projectId])
+}
+
+model OrchestrationNode {
+  id           String             @id @default(cuid())
+  taskId       String
+  task         OrchestrationTask  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  parentId     String?
+  type         String // research, document_analysis, code_analysis, security_analysis, education, rag, generation, transformation, validation, testing, reporting, tool_execution, user_approval, analysis
+  agent        String             @default("general") // general, research, education, security, coding, document, rag, report
+  title        String
+  description  String             @default("")
+  status       String             @default("pending") // pending, ready, running, waiting, waiting_approval, paused, completed, failed, cancelled, retrying, blocked
+  priority     Int                @default(5)
+  order        Int                @default(0)
+  dependencies String? // JSON: string[] of prerequisite node ids (denormalized for scheduling)
+  inputs       String? // JSON: node input + artifact refs
+  outputs      String? // JSON: structured AgentResult
+  artifactRefs String? // JSON: string[] artifact ids
+  error        String?
+  retries      Int                @default(0)
+  maxRetries   Int                @default(2)
+  timeoutMs    Int                @default(300000)
+  startedAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  dependsOn   TaskDependency[]  @relation("TaskDependencyTarget")
+  blocks      TaskDependency[]  @relation("TaskDependencySource")
+  events      TaskEvent[]
+  approvals   TaskApproval[]
+  questions   TaskQuestion[]
+  runs        TaskRun[]
+
+  @@index([taskId, status])
+  @@index([parentId])
+}
+
+model TaskDependency {
+  id         String            @id @default(cuid())
+  taskId     String
+  task       OrchestrationTask  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  fromNodeId String
+  fromNode   OrchestrationNode @relation("TaskDependencySource", fields: [fromNodeId], references: [id], onDelete: Cascade)
+  toNodeId   String
+  toNode     OrchestrationNode @relation("TaskDependencyTarget", fields: [toNodeId], references: [id], onDelete: Cascade)
+  kind       String            @default("data") // data, control, conditional
+  createdAt  DateTime          @default(now())
+
+  @@unique([fromNodeId, toNodeId])
+  @@index([taskId])
+}
+
+model TaskEvent {
+  id        String             @id @default(cuid())
+  taskId    String
+  task      OrchestrationTask  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  nodeId    String?
+  node      OrchestrationNode? @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  type      String
+  message   String
+  meta      String? // JSON
+  createdAt DateTime           @default(now())
+
+  @@index([taskId, createdAt])
+  @@index([nodeId])
+}
+
+model AgentMessage {
+  id            String            @id @default(cuid())
+  taskId        String
+  task          OrchestrationTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  nodeId        String?
+  senderAgent   String
+  receiverAgent String
+  messageType   String // REQUEST, RESPONSE, QUESTION, RESULT, WARNING, ERROR, HANDOFF, VALIDATION, APPROVAL_REQUIRED
+  payload       String // JSON
+  references    String? // JSON
+  priority      Int               @default(5)
+  createdAt     DateTime          @default(now())
+
+  @@index([taskId, createdAt])
+}
+
+model TaskApproval {
+  id          String              @id @default(cuid())
+  taskId      String
+  task        OrchestrationTask   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  nodeId      String?
+  node        OrchestrationNode?  @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  category    String              @default("READ_ONLY") // READ_ONLY, LOW_RISK, WRITE, COMMAND_EXECUTION, EXTERNAL_ACTION, HIGH_RISK
+  status      String              @default("pending") // pending, approved, rejected, cancelled
+  reason      String              @default("")
+  requestedBy String
+  askedAt     DateTime            @default(now())
+  decidedAt   DateTime?
+  decidedBy   String?
+  meta        String? // JSON: files, commands, details
+  createdAt   DateTime            @default(now())
+
+  @@index([taskId, status])
+}
+
+model TaskArtifact {
+  id           String             @id @default(cuid())
+  taskId       String
+  task         OrchestrationTask  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  nodeId       String?
+  creatorAgent String             @default("general")
+  artifactType String             @default("note") // report, code_patch, document, research_result, security_finding, dataset, chart, test_result, note
+  title        String
+  summary      String             @default("")
+  body         String? // rendered markdown/text payload
+  refId        String? // external reference: report.id, document.id, etc.
+  provenance   String? // JSON: { task, agents, sources, version, createdAt }
+  createdAt    DateTime           @default(now())
+
+  @@index([taskId, artifactType])
+}
+
+model TaskCheckpoint {
+  id        String            @id @default(cuid())
+  taskId    String
+  task      OrchestrationTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  label     String
+  data      String // JSON snapshot of node statuses at this point
+  createdAt DateTime          @default(now())
+
+  @@index([taskId])
+}
+
+model TaskMemory {
+  id        String            @id @default(cuid())
+  taskId    String
+  task      OrchestrationTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  kind      String            @default("note") // decision, fact, constraint, note, unresolved
+  content   String
+  createdAt DateTime          @default(now())
+
+  @@index([taskId])
+}
+
+model TaskQuestion {
+  id         String             @id @default(cuid())
+  taskId     String
+  task       OrchestrationTask  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  nodeId     String?
+  node       OrchestrationNode? @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  question   String
+  options    String? // JSON: string[]
+  status     String             @default("pending") // pending, answered, cancelled
+  answer     String?
+  askedAt    DateTime           @default(now())
+  answeredAt DateTime?
+  createdAt  DateTime           @default(now())
+
+  @@index([taskId, status])
+}
+
+model TaskRun {
+  id               String             @id @default(cuid())
+  taskId           String
+  task             OrchestrationTask  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  nodeId           String?
+  node             OrchestrationNode? @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  kind             String             @default("agent") // agent, tool, model
+  agent            String?
+  tool             String?
+  provider         String?
+  model            String?
+  status           String             @default("running") // running, success, failed, cancelled
+  ok               Boolean?
+  promptTokens     Int?
+  completionTokens Int?
+  totalTokens      Int?
+  costUsd          Float?
+  costEstimated    Boolean            @default(false)
+  durationMs       Int?
+  error            String?
+  meta             String? // JSON
+  createdAt        DateTime           @default(now())
+
+  @@index([taskId, kind])
+  @@index([nodeId])
 }

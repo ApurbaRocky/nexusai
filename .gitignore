@@ -24,6 +24,9 @@
 /dev.db
 /prisma/dev.db
 
+# coding agent workspace storage
+/data/
+
 # misc
 .DS_Store
 *.pem

@@ -12,6 +12,7 @@ import { questionGeneratorTool } from "@/tools/tools/education/question-generato
 import { quizTool } from "@/tools/tools/education/quiz";
 import { evaluateAnswerTool } from "@/tools/tools/education/evaluate-answer";
 import { flashcardTool } from "@/tools/tools/education/flashcard";
+import { codingTools } from "@/tools/tools/coding";
 
 const tools: Map<string, ToolDef> = new Map();
 
@@ -30,6 +31,7 @@ register(questionGeneratorTool);
 register(quizTool);
 register(evaluateAnswerTool);
 register(flashcardTool);
+codingTools.forEach(register);
 
 export function getTool(name: string): ToolDef | undefined {
   return tools.get(name);

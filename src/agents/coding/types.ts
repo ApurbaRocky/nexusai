@@ -98,18 +98,18 @@ export interface ArchitectureReport {
 }
 
 export interface ChangePlanStep {
-  step: number;
   title: string;
-  detail: string;
+  description: string;
   files?: string[];
-  tool?: string;
+  dependsOn?: string[];
+  duration?: string;
 }
 
 export interface CodingPlanData {
-  title: string;
+  summary: string;
+  goals: string[];
   steps: ChangePlanStep[];
-  filesAffected: string[];
-  risks: { level: "low" | "medium" | "high"; notes: string[] };
+  risks: string[];
 }
 
 export interface DiffOp {
@@ -121,13 +121,17 @@ export interface DiffOp {
 
 /** Discrete edit proposed against the workspace, applied only after approval. */
 export interface ProposedChange {
-  path: string;
+  id: string;
+  taskId: string;
+  filePath: string;
   action: "create" | "edit" | "delete" | "rename";
-  newPath?: string;
-  baseHash?: string;
-  targetHash?: string;
+  summary?: string | null;
+  additions: number;
+  deletions: number;
+  status: ChangeStatus;
   oldContent?: string;
   newContent?: string;
+  diffPreview?: string;
 }
 
 export interface TestRunCommand {
@@ -143,19 +147,21 @@ export interface CommandIntent {
 
 export interface ReviewFinding {
   severity: "critical" | "high" | "medium" | "low" | "info";
-  file: string;
-  line?: number;
   category: string;
+  path: string;
+  line?: string;
   title: string;
   detail: string;
   suggestion?: string;
 }
 
 export interface DebugRootCause {
+  summary: string;
   symptom: string;
-  hypothesis: string;
+  probableRootCause: string;
   evidence: string[];
-  affectedFile: string;
-  affectedLine?: number;
-  fixSuggestion: string;
+  checkCommands: string[];
+  suggestedFile: string;
+  suggestedFix: string;
+  confidence: "high" | "medium" | "low";
 }

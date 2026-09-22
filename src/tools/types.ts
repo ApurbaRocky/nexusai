@@ -13,6 +13,8 @@ export interface ToolContext {
   conversationId?: string;
   projectId?: string;
   documentIds?: string[];
+  /** Coding workspace the agent is operating inside (Phase 6 tools). */
+  codingWorkspaceId?: string;
   /** Explicit user confirmation for HIGH/CRITICAL actions. */
   confirmed?: boolean;
   /** Prefer snappy, safe defaults. */
