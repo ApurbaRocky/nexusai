@@ -52,11 +52,11 @@ export function nextNodeStatus(from: NodeStatus, to: NodeStatus): NodeStatus {
 }
 
 export function canTransitionTask(from: TaskStatus, to: TaskStatus): boolean {
-  return from === to || TASK_TRANSITIONS[from]?.includes(to) ?? false;
+  return from === to || (TASK_TRANSITIONS[from]?.includes(to) ?? false);
 }
 
 export function canTransitionNode(from: NodeStatus, to: NodeStatus): boolean {
-  return from === to || NODE_TRANSITIONS[from]?.includes(to) ?? false;
+  return from === to || (NODE_TRANSITIONS[from]?.includes(to) ?? false);
 }
 
 /** A task is considered "active" until a terminal state. */

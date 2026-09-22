@@ -7,6 +7,7 @@
  */
 import type { ApprovalCategory, AgentId, TaskType } from "@/orchestration/types";
 import { getAgent as getBaseAgent } from "@/agents/agents/registry";
+import type { AgentId as BaseAgentId } from "@/agents/types";
 
 export interface OrchestrationAgent {
   id: AgentId;
@@ -46,23 +47,23 @@ const EXTRA_DEFINITIONS: Partial<Record<AgentId, { name: string; description: st
   },
 };
 
+const BASE_AGENTS: BaseAgentId[] = ["assistant", "research", "education", "security", "coding", "document"];
+
 export function orchestrationAgents(): OrchestrationAgent[] {
   const ids: AgentId[] = ["general", "research", "education", "security", "coding", "document", "rag", "report"];
   return ids.map((id) => {
     const base = BASE[id];
     const extra = EXTRA_DEFINITIONS[id];
-    const existing = getBaseAgent(id as "assistant" | "research" | "education" | "security" | "coding" | "document").name;
+    const existing = BASE_AGENTS.includes(id as BaseAgentId) ? getBaseAgent(id as BaseAgentId) : undefined;
     return {
       id,
-      name: extra?.name ?? existing ?? id,
-      description: extra?.description ?? getBaseAgent(id as "assistant" | "research" | "education" | "security" | "coding" | "document").description,
-      capabilities:
-        extra?.capabilities ??
-        getBaseAgent(id as "assistant" | "research" | "education" | "security" | "coding" | "document").capabilities,
+      name: extra?.name ?? existing?.name ?? id,
+      description: extra?.description ?? existing?.description ?? "",
+      capabilities: extra?.capabilities ?? existing?.capabilities ?? [],
       supportedTaskTypes: base?.taskTypes ?? [],
       riskLevel: base?.risk ?? "READ_ONLY",
-      tools: extra?.tools ?? getBaseAgent(id as "assistant" | "research" | "education" | "security" | "coding" | "document").allowedTools,
-      implemented: id !== "report" || true,
+      tools: extra?.tools ?? existing?.allowedTools ?? [],
+      implemented: true,
     };
   });
 }
