@@ -23,6 +23,12 @@ export async function GET(request: NextRequest, { params }: RouteCtx) {
   const { id, action } = await params;
   const [head, ...rest] = action;
 
+  const workspace = await prisma.codingWorkspace.findFirst({
+    where: { id, userId: authed.user.id },
+    select: { id: true },
+  });
+  if (!workspace) return NextResponse.json({ error: "Workspace not found." }, { status: 404 });
+
   const url = request.nextUrl;
   switch (head) {
     case "index":
@@ -136,6 +142,8 @@ export async function POST(request: NextRequest, { params }: RouteCtx) {
 
     case "apply": {
       const taskId = z.string().min(1).parse(body?.taskId ?? "");
+      const task = await prisma.codingTask.findFirst({ where: { id: taskId, workspaceId: id, userId: authed.user.id }, select: { id: true } });
+      if (!task) return NextResponse.json({ error: "Task not found." }, { status: 404 });
       const confirmed = body?.confirmed === true;
       if (!confirmed) return NextResponse.json({ error: "Approval required." }, { status: 422 });
       const res = await CodingAgent.apply(taskId, {
@@ -149,6 +157,8 @@ export async function POST(request: NextRequest, { params }: RouteCtx) {
 
     case "reject": {
       const taskId = z.string().min(1).parse(body?.taskId ?? "");
+      const task = await prisma.codingTask.findFirst({ where: { id: taskId, workspaceId: id, userId: authed.user.id }, select: { id: true } });
+      if (!task) return NextResponse.json({ error: "Task not found." }, { status: 404 });
       await CodingAgent.rejectTask(taskId);
       await audit("coding.change.reject", { userId: authed.user.id }, { workspaceId: id, taskId });
       return NextResponse.json({ ok: true });

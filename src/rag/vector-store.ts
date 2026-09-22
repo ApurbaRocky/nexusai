@@ -3,9 +3,9 @@
  *
  * - `SqliteVectorStore` (default, local dev): stores embedding vectors as
  *   JSON text and computes cosine similarity in-process. Replaceable.
- * - Postgres deployment path: switch to pgvector by adding the `vector`
- *   column + HNSW/IVFFlat index via raw SQL and a `PgVectorStore` adapter
- *   implementing the same interface (documented as an integration point).
+ * - PostgreSQL uses the same JSON embedding representation for portability.
+ *   It is correct for production correctness, while a future pgvector adapter
+ *   can optimize search without changing the VectorStore contract.
  */
 import { prisma } from "@/database/client";
 import { cosineSimilarity } from "@/rag/embeddings";
@@ -74,18 +74,45 @@ export class SqliteVectorStore implements VectorStore {
   }
 }
 
-/** pgvector integration point (Postgres). Interface-compatible. */
+/** PostgreSQL-compatible JSON embedding store. */
 export class PgVectorStore implements VectorStore {
   readonly kind = "pgvector" as const;
-  constructor(private _dimension = 1536) {}
-  async upsert(): Promise<void> {
-    throw new Error("pgvector store is an integration point — configure the vector column and index, then implement upsert/search.");
+  async upsert(chunk: { id: string; documentId: string; index: number; content: string; tokenCount?: number }, embedding: number[]) {
+    await prisma.documentChunk.upsert({
+      where: { documentId_index: { documentId: chunk.documentId, index: chunk.index } },
+      create: {
+        documentId: chunk.documentId,
+        index: chunk.index,
+        content: chunk.content,
+        tokenCount: chunk.tokenCount,
+        embedding: JSON.stringify(embedding),
+      },
+      update: { content: chunk.content, tokenCount: chunk.tokenCount, embedding: JSON.stringify(embedding) },
+    });
   }
-  async search(): Promise<RetrievedContext[]> {
-    throw new Error("pgvector store is an integration point.");
+  async search(queryEmbedding: number[], options: { topK: number; documentIds?: string[]; minSimilarity?: number }): Promise<RetrievedContext[]> {
+    const rows = await prisma.documentChunk.findMany({
+      where: options.documentIds?.length ? { documentId: { in: options.documentIds } } : {},
+      take: 2000,
+      select: { documentId: true, index: true, content: true, pageNumber: true, embedding: true, document: { select: { filename: true } } },
+    });
+    const results: RetrievedContext[] = [];
+    const minSimilarity = options.minSimilarity ?? 0.15;
+    for (const row of rows) {
+      if (!row.embedding) continue;
+      try {
+        const similarity = cosineSimilarity(queryEmbedding, JSON.parse(row.embedding) as number[]);
+        if (similarity >= minSimilarity) {
+          results.push({ documentId: row.documentId, filename: row.document.filename, chunkIndex: row.index, page: row.pageNumber ?? undefined, content: row.content, similarity });
+        }
+      } catch {
+        // Ignore malformed historical embeddings and continue retrieval.
+      }
+    }
+    return results.sort((a, b) => b.similarity - a.similarity).slice(0, options.topK);
   }
-  async deleteByDocument(): Promise<void> {
-    throw new Error("pgvector store is an integration point.");
+  async deleteByDocument(documentId: string): Promise<void> {
+    await prisma.documentChunk.deleteMany({ where: { documentId } });
   }
 }
 

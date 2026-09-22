@@ -34,7 +34,13 @@ export type AuditAction =
   | "coding.git"
   | "security.rate_limited"
   | "security.validation_failed"
-  | "research.start";
+  | "research.start"
+  | "approval.requested"
+  | "approval.approved"
+  | "approval.rejected"
+  | "approval.cancelled"
+  | "memory.access"
+  | "memory.exported";
 
 export interface AuditContext {
   userId?: string | null;

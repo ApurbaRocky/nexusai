@@ -1,6 +1,8 @@
 "use client";
 
-import * as React from "react";
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,22 +17,23 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { api, type ApiKeyRecord, type ModelRow } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
-import { CheckCircle2, KeyRound, Plus, Trash2, XCircle } from "lucide-react";
+import { CheckCircle2, KeyRound, Plus, Trash2, XCircle, Brain } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { MemoryDashboard } from "@/components/memory/MemoryDashboard";
 
 export function SettingsClient() {
-  const [profile, setProfile] = React.useState<{ name: string; email: string; role: string } | null>(null);
-  const [models, setModels] = React.useState<ModelRow[]>([]);
-  const [providers, setProviders] = React.useState<{ id: string; label: string; configured: boolean }[]>([]);
-  const [keys, setKeys] = React.useState<ApiKeyRecord[]>([]);
-  const [demoMode, setDemoMode] = React.useState<boolean | null>(null);
-  const [name, setName] = React.useState("");
-  const [defaultModel, setDefaultModel] = React.useState("");
-  const [savingProfile, setSavingProfile] = React.useState(false);
-  const [newKey, setNewKey] = React.useState<{ provider: string; name: string; apiKey: string }>({ provider: "openai", name: "", apiKey: "" });
-  const [savingKey, setSavingKey] = React.useState(false);
+  const [profile, setProfile] = useState<{ name: string; email: string; role: string } | null>(null);
+  const [models, setModels] = useState<ModelRow[]>([]);
+  const [providers, setProviders] = useState<{ id: string; label: string; configured: boolean }[]>([]);
+  const [keys, setKeys] = useState<ApiKeyRecord[]>([]);
+  const [demoMode, setDemoMode] = useState<boolean | null>(null);
+  const [name, setName] = useState("");
+  const [defaultModel, setDefaultModel] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [newKey, setNewKey] = useState<{ provider: string; name: string; apiKey: string }>({ provider: "openai", name: "", apiKey: "" });
+  const [savingKey, setSavingKey] = useState(false);
 
-  const load = React.useCallback(async () => {
+  const load = useCallback(async () => {
     const all = await Promise.all([api.settings(), api.models(), api.apiKeys()]);
     setProfile(all[0].profile);
     setName(all[0].profile.name);
@@ -40,7 +43,7 @@ export function SettingsClient() {
     setKeys(all[2].keys);
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     load().catch(() => {});
     fetch("/api/models").then((r) => r.json()).then((j) => setDemoMode(Boolean((j as { demoEnabled?: boolean }).demoEnabled))).catch(() => {});
   }, [load]);
@@ -106,6 +109,10 @@ export function SettingsClient() {
           <TabsList>
             <TabsTrigger value="models">AI Models</TabsTrigger>
             <TabsTrigger value="keys">API Keys</TabsTrigger>
+            <TabsTrigger value="memory">
+              <Brain className="size-4 mr-2" />
+              Memory
+            </TabsTrigger>
             <TabsTrigger value="appearance">Appearance</TabsTrigger>
             <TabsTrigger value="profile">Profile</TabsTrigger>
           </TabsList>
@@ -221,6 +228,10 @@ export function SettingsClient() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="memory" className="space-y-4 pt-4">
+            <MemoryDashboard />
           </TabsContent>
 
           <TabsContent value="appearance" className="space-y-4 pt-4">

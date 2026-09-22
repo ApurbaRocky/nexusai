@@ -83,6 +83,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "localPath is required for local workspaces." }, { status: 422 });
   }
 
+  if ((fields as { sourceType?: string }).sourceType === "local" && authed.user.role !== "admin") {
+    return NextResponse.json({ error: "Local filesystem workspaces require administrator access." }, { status: 403 });
+  }
+
   try {
     const created = await CodingAgent.createWorkspace({
       ...(fields as Parameters<typeof CodingAgent.createWorkspace>[0]),

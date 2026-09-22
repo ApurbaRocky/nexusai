@@ -50,6 +50,20 @@ model User {
   codingWorkspaces       CodingWorkspace[]
   codingTasks            CodingTask[]
   orchestrationTasks     OrchestrationTask[]
+  approvalRequests       ApprovalRequest[]
+  approvalAudits         ApprovalAudit[]
+  memoryRecords          MemoryRecord[]
+  memoryVersions         MemoryVersion[]
+  memoryAccessLogs       MemoryAccessLog[]
+  memoryConsents         MemoryConsent[]
+  memoryRetentionPolicies MemoryRetentionPolicy[]
+  memoryScopes           MemoryScope[]
+  knowledgeEntities      KnowledgeEntity[]
+  knowledgeRelationships KnowledgeRelationship[]
+  knowledgeEvidence      KnowledgeEvidence[]
+  memoryAgentPermissions MemoryAgentPermission[]
+  memoryExports          MemoryExport[]
+  memoryConflicts        MemoryConflict[]
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
 }
@@ -66,6 +80,7 @@ model Conversation {
   archived  Boolean    @default(false)
   messages  Message[]
   toolCalls ToolCall[]
+  memoryRecords MemoryRecord[]
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
@@ -99,6 +114,7 @@ model Project {
   conversations    Conversation[]
   documents        Document[]
   memories         Memory[]
+  memoryRecords    MemoryRecord[]
   researchSessions ResearchSession[]
   reports          Report[]
   securityScans    SecurityScan[]
@@ -138,6 +154,7 @@ model Document {
   chunks                DocumentChunk[]
   pages                 DocumentPage[]
   processingJobs        ProcessingJob[]
+  memoryRecords         MemoryRecord[]
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
 
@@ -1098,6 +1115,8 @@ model OrchestrationTask {
   memories        TaskMemory[]
   questions       TaskQuestion[]
   runs            TaskRun[]
+  approvalRequests ApprovalRequest[]
+  memoryRecords   MemoryRecord[]
 
   @@index([userId, status])
   @@index([userId, updatedAt])
@@ -1135,6 +1154,7 @@ model OrchestrationNode {
   approvals   TaskApproval[]
   questions   TaskQuestion[]
   runs        TaskRun[]
+  approvalRequests ApprovalRequest[]
 
   @@index([taskId, status])
   @@index([parentId])
@@ -1286,4 +1306,372 @@ model TaskRun {
 
   @@index([taskId, kind])
   @@index([nodeId])
+}
+
+// ---------------------------------------------------------------------------
+// Global Governance — User Approval System (RULE-USER-CONTROL-001 through 004)
+// ---------------------------------------------------------------------------
+
+model ApprovalRequest {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  taskId          String?
+  task            OrchestrationTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  nodeId          String?
+  node            OrchestrationNode? @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+  agentId         String
+  toolId          String?
+  actionType      String
+  target          String
+  description     String
+  riskLevel       String
+  exactAction     String    // JSON: canonical action representation for hash verification
+  approvalHash    String    // SHA256 of canonical action
+  status          String    @default("PENDING") // PENDING, APPROVED, REJECTED, EXPIRED, CANCELLED
+  createdAt       DateTime  @default(now())
+  expiresAt       DateTime
+  approvedAt      DateTime?
+  rejectedAt      DateTime?
+  decidedBy       String?
+
+  @@index([userId, status])
+  @@index([taskId, status])
+  @@index([agentId, status])
+  @@index([expiresAt])
+}
+
+model ApprovalAudit {
+  id           String   @id @default(cuid())
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  approvalId   String?
+  actionType   String
+  target       String
+  riskLevel    String
+  event        String   // ACTION_REQUESTED, APPROVAL_REQUIRED, APPROVAL_APPROVED, APPROVAL_REJECTED, ACTION_REVALIDATED, ACTION_EXECUTED, ACTION_BLOCKED, APPROVAL_EXPIRED, APPROVAL_CANCELLED
+  status       String
+  meta         String?  // JSON: additional context
+  ip           String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([approvalId])
+  @@index([event, createdAt])
+  @@index([actionType, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 9 — Memory, Long-Term Context Intelligence, Personal Knowledge Graph
+// ---------------------------------------------------------------------------
+
+model MemoryRecord {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId       String?
+  project         Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  conversationId  String?
+  conversation    Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  taskId          String?
+  task            OrchestrationTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  documentId      String?
+  document        Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  type            String
+  scope           String    @default("GLOBAL_USER")
+  title           String?
+  content         String
+  summary         String?
+  importance      Float     @default(0.5)
+  confidence      Float     @default(0.5)
+
+  sourceType      String
+  sourceId        String?
+  provenance      String?   // JSON: MemoryProvenance
+
+  embedding       String?   // JSON: vector embedding
+  tags            String?   // JSON: string[]
+  entities        String?   // JSON: string[]
+
+  privacyLevel    String    @default("NORMAL")
+  userVisible     Boolean   @default(true)
+  userConfirmed   Boolean   @default(false)
+  status          String    @default("ACTIVE")
+  version         Int       @default(1)
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  lastAccessedAt  DateTime?
+  expiresAt       DateTime?
+
+  versions                MemoryVersion[]
+  conflicts               MemoryConflict[] @relation("MemoryConflicts")
+  conflictingMemoryConflicts MemoryConflict[] @relation("ConflictingMemoryConflicts")
+  tagsRelation            MemoryTag[]
+  accessLogs              MemoryAccessLog[]
+  consents                MemoryConsent[]
+  graphEntities           KnowledgeEntity[] @relation("MemoryEntities")
+  exports                 MemoryExport[]
+  embeddingRecord         MemoryEmbedding?
+
+  @@index([userId, status])
+  @@index([userId, type])
+  @@index([userId, scope])
+  @@index([userId, projectId])
+  @@index([userId, conversationId])
+  @@index([userId, taskId])
+  @@index([userId, createdAt])
+  @@index([userId, importance])
+  @@index([userId, expiresAt])
+  @@index([sourceType, sourceId])
+}
+
+model MemoryVersion {
+  id              String       @id @default(cuid())
+  memoryId        String
+  memory          MemoryRecord @relation(fields: [memoryId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content         String
+  summary         String?
+  importance      Float
+  confidence      Float
+  tags            String?
+  entities        String?
+  changedBy       String      // "user" | "agent" | "system" | "extraction"
+  changeReason    String?
+  version         Int
+  createdAt       DateTime     @default(now())
+
+  @@index([memoryId, version])
+  @@index([userId])
+}
+
+model MemoryEmbedding {
+  id          String       @id @default(cuid())
+  memoryId    String
+  memory      MemoryRecord @relation(fields: [memoryId], references: [id], onDelete: Cascade)
+  vector      String       // JSON: number[]
+  model       String
+  dimensions  Int
+  createdAt   DateTime     @default(now())
+
+  @@unique([memoryId])
+  @@index([memoryId])
+}
+
+model MemoryTag {
+  id          String       @id @default(cuid())
+  memoryId    String
+  memory      MemoryRecord @relation(fields: [memoryId], references: [id], onDelete: Cascade)
+  tag         String
+  createdAt   DateTime     @default(now())
+
+  @@unique([memoryId, tag])
+  @@index([tag])
+}
+
+model MemorySource {
+  id          String   @id @default(cuid())
+  sourceType  String
+  sourceId    String
+  memoryIds   String   // JSON: string[]
+  createdAt   DateTime @default(now())
+
+  @@index([sourceType, sourceId])
+}
+
+model MemoryConflict {
+  id                  String         @id @default(cuid())
+  userId              String
+  user                User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  memoryId            String
+  memory              MemoryRecord   @relation("MemoryConflicts", fields: [memoryId], references: [id], onDelete: Cascade)
+  conflictingMemoryId String
+  conflictingMemory   MemoryRecord   @relation("ConflictingMemoryConflicts", fields: [conflictingMemoryId], references: [id], onDelete: Cascade)
+  conflictType        String         // "CONTRADICTION" | "DUPLICATE" | "OUTDATED" | "SCOPE_MISMATCH"
+  description         String
+  resolution          String?        // "KEEP_FIRST" | "KEEP_SECOND" | "MERGE" | "USER_DECIDED" | "PENDING"
+  resolvedAt          DateTime?
+  resolvedBy          String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  @@index([userId, resolution])
+  @@index([memoryId])
+  @@index([conflictingMemoryId])
+}
+
+model MemoryAccessLog {
+  id          String       @id @default(cuid())
+  memoryId    String
+  memory      MemoryRecord @relation(fields: [memoryId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agentId     String?
+  operation   String       // "READ" | "SEARCH" | "CREATE" | "UPDATE" | "ARCHIVE" | "DELETE" | "EXPORT" | "SHARE"
+  success     Boolean      @default(true)
+  meta        String?      // JSON
+  ip          String?
+  userAgent   String?
+  createdAt   DateTime     @default(now())
+
+  @@index([userId, createdAt])
+  @@index([memoryId, createdAt])
+  @@index([agentId, createdAt])
+}
+
+model MemoryConsent {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  memoryId    String
+  memory      MemoryRecord @relation(fields: [memoryId], references: [id], onDelete: Cascade)
+  scope       String   // "GLOBAL" | "PROJECT" | "CONVERSATION" | "AGENT"
+  agentId     String?
+  granted     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  revokedAt   DateTime?
+
+  @@unique([userId, memoryId, scope, agentId])
+  @@index([userId, granted])
+  @@index([memoryId])
+}
+
+model MemoryRetentionPolicy {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type          String   // "GLOBAL" | "TYPE" | "SCOPE" | "PROJECT"
+  targetValue   String?  // e.g., memory type, scope, projectId
+  maxAgeDays    Int?
+  maxCount      Int?
+  minImportance Float?
+  autoArchive   Boolean  @default(false)
+  autoDelete    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, type, targetValue])
+  @@index([userId])
+}
+
+model MemoryScope {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  parentId    String?
+  parent      MemoryScope? @relation("ScopeHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children    MemoryScope[] @relation("ScopeHierarchy")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([parentId])
+}
+
+model KnowledgeEntity {
+  id              String       @id @default(cuid())
+  userId          String
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
+  type            String       // "User" | "Project" | "Technology" | "Skill" | "Document" | "ResearchTopic" | "Subject" | "Course" | "Task" | "Agent" | "Website" | "Organization" | "Concept" | "Preference" | "Goal"
+  description     String?
+  properties      String?      // JSON
+  confidence      Float        @default(0.5)
+  importance      Float        @default(0.5)
+  sourceType      String
+  sourceId        String?
+  status          String       @default("ACTIVE")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  lastAccessedAt  DateTime?
+
+  memories        MemoryRecord[] @relation("MemoryEntities")
+  relationships   KnowledgeRelationship[] @relation("EntityRelationships")
+  inverseRelationships KnowledgeRelationship[] @relation("InverseEntityRelationships")
+  evidence        KnowledgeEvidence[]
+
+  @@index([userId, type])
+  @@index([userId, name])
+  @@index([userId, status])
+  @@index([sourceType, sourceId])
+  @@unique([userId, type, name])
+}
+
+model KnowledgeRelationship {
+  id            String           @id @default(cuid())
+  userId        String
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceEntityId String
+  sourceEntity  KnowledgeEntity  @relation("EntityRelationships", fields: [sourceEntityId], references: [id], onDelete: Cascade)
+  targetEntityId String
+  targetEntity  KnowledgeEntity  @relation("InverseEntityRelationships", fields: [targetEntityId], references: [id], onDelete: Cascade)
+  type          String           // "PREFERS" | "USES" | "WORKS_ON" | "STUDIES" | "READS" | "RELATED_TO" | "DEPENDS_ON" | "COMPLETED" | "INTERESTED_IN" | "CREATED" | "REFERENCES" | "HAS_GOAL" | "HAS_TASK"
+  confidence    Float            @default(0.5)
+  weight        Float            @default(1.0)
+  properties    String?          // JSON
+  evidence      KnowledgeEvidence[]
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([userId])
+  @@index([sourceEntityId])
+  @@index([targetEntityId])
+  @@unique([sourceEntityId, targetEntityId, type])
+}
+
+model KnowledgeEvidence {
+  id            String               @id @default(cuid())
+  userId        String
+  user          User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entityId      String?
+  entity        KnowledgeEntity?     @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  relationshipId String?
+  relationship  KnowledgeRelationship? @relation(fields: [relationshipId], references: [id], onDelete: Cascade)
+  sourceType    String               // "conversation" | "document" | "research" | "task" | "user_explicit"
+  sourceId      String
+  excerpt       String?
+  confidence    Float                @default(0.5)
+  createdAt     DateTime             @default(now())
+
+  @@index([userId])
+  @@index([entityId])
+  @@index([relationshipId])
+  @@index([sourceType, sourceId])
+}
+
+model MemoryAgentPermission {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agentId     String
+  permission  String   // "READ" | "SEARCH" | "CREATE" | "UPDATE" | "ARCHIVE" | "DELETE" | "EXPORT" | "SHARE"
+  scope       String   // "GLOBAL" | "PROJECT" | "CONVERSATION" | "TASK" | "DOCUMENT_COLLECTION" | "AGENT" | "SESSION"
+  scopeId     String?
+  granted     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  revokedAt   DateTime?
+
+  @@unique([userId, agentId, permission, scope, scopeId])
+  @@index([userId, agentId])
+  @@index([agentId, scope])
+}
+
+model MemoryExport {
+  id          String       @id @default(cuid())
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  memoryId    String
+  memory      MemoryRecord @relation(fields: [memoryId], references: [id], onDelete: Cascade)
+  format      String       // "JSON" | "CSV" | "MARKDOWN"
+  content     String
+  createdAt   DateTime     @default(now())
+
+  @@index([userId, createdAt])
+  @@index([memoryId])
 }

@@ -171,7 +171,19 @@ export function runCommand(command: string, opts: RunOptions = {}): Promise<RunR
         timeout: timeoutMs,
         maxBuffer: maxOutput,
         windowsHide: true,
-        env: { ...process.env, NO_COLOR: "1", CI: "1", ...(opts.env ?? {}) },
+        env: {
+          NODE_ENV: process.env.NODE_ENV ?? "production",
+          PATH: process.env.PATH,
+          HOME: process.env.HOME,
+          USERPROFILE: process.env.USERPROFILE,
+          SystemRoot: process.env.SystemRoot,
+          ComSpec: process.env.ComSpec,
+          LANG: process.env.LANG,
+          LC_ALL: process.env.LC_ALL,
+          NO_COLOR: "1",
+          CI: "1",
+          ...(opts.env ?? {}),
+        },
       });
     } catch (err) {
       resolve({ ok: false, exitCode: 1, stdout: "", stderr: err instanceof Error ? err.message : String(err), durationMs: 0, timedOut: false });

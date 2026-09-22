@@ -5,18 +5,32 @@
  */
 import { z } from "zod";
 
+const isProduction = process.env.NODE_ENV === "production";
+const isNextBuild = process.env.NEXT_PHASE === "phase-production-build";
+
+const secretSchema = (fallback: string) =>
+  isProduction && !isNextBuild ? z.string().min(32) : z.string().min(1).default(fallback);
+
+const databaseUrlSchema = isProduction && !isNextBuild
+  ? z.string().refine((value) => value.startsWith("postgres://") || value.startsWith("postgresql://"), {
+      message: "Production deployments require a PostgreSQL DATABASE_URL.",
+    })
+  : z.string().default("file:./prisma/dev.db");
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 
   // Auth
-  AUTH_SECRET: z.string().min(1).default("dev-secret-change-me"),
+  AUTH_SECRET: secretSchema("dev-secret-change-me"),
 
   // Database (PostgreSQL in production, SQLite for local dev)
-  DATABASE_URL: z.string().default("file:./prisma/dev.db"),
+  DATABASE_URL: databaseUrlSchema,
 
   // Field-level encryption master key (hex, 32 bytes -> 64 hex chars).
   // Used to encrypt user-provided API keys at rest.
-  ENCRYPTION_KEY: z.string().min(32).default("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
+  ENCRYPTION_KEY: isProduction && !isNextBuild
+    ? z.string().regex(/^[0-9a-fA-F]{64}$/, "Production ENCRYPTION_KEY must be 64 hexadecimal characters.")
+    : z.string().min(32).default("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
 
   // AI providers (server-side supplier keys)
   OPENAI_API_KEY: z.string().optional().default(""),

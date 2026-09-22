@@ -12,7 +12,8 @@ import { resolveKeySource } from "@/security/api-key-resolver";
 import type { ChatMessage, StreamEvent } from "@/types";
 import { streamEvent } from "@/types";
 import { lookupModel, MODEL_CATALOG } from "@/ai/model-catalog";
-import { memoryBlockText } from "@/memory/service";
+import { memoryRetriever } from "@/memory/retriever";
+import { memoryExtractor } from "@/memory/extractor";
 import { log } from "@/utils/log";
 import type { ModelInfo } from "@/ai/providers/base";
 
@@ -107,7 +108,18 @@ export async function POST(request: NextRequest) {
     });
 
     const history = await buildHistory(conversation.id, userMessage.id);
-    const memoryBlock = memoryEnabled ? await memoryBlockText(authed.user.id, payload.projectId || undefined) : "";
+
+    let memoryBlock = "";
+    if (memoryEnabled) {
+      const context = await memoryRetriever.getContextForAgent(authed.user.id, agent.id, {
+        projectId: payload.projectId ?? undefined,
+        conversationId: conversation.id,
+        query: payload.content,
+      });
+      memoryBlock = context.memories
+        .map((m, i) => `${i + 1}. (${m.type}) ${m.content}`)
+        .join("\n");
+    }
 
     const stream = buildStream({
       userId: authed.user.id,
@@ -276,6 +288,22 @@ async function finalizeAssistantMessage(opts: BuildStreamOptions, text: string, 
         }),
       },
     });
+
+    // Async memory extraction (non-blocking)
+    if (opts.history.length > 2) {
+      const recentMessages = opts.history.slice(-10);
+      const extraction = memoryExtractor.extractFromConversation({
+        conversationId: opts.conversationId,
+        userId: opts.userId,
+        messages: recentMessages.map((m) => ({ role: m.role, content: m.content })),
+        projectId: undefined, // Would need to pass from opts
+      });
+
+      // Don't await - run in background
+      extraction.catch((err: unknown) => {
+        log.error("memory-extraction-background-failed", { error: (err as Error).message });
+      });
+    }
   } catch {
     /* non-blocking */
   }

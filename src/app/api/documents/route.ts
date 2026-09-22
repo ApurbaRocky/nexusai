@@ -81,10 +81,10 @@ export async function POST(request: NextRequest) {
     await audit("document.upload", { userId: authed.user.id }, { documentId: document.id, mime });
     log.info("document-uploaded", { documentId: document.id, mime, size: file.size });
 
-    // Kick off RAG indexing without blocking the response.
-    void indexDocument(document.id).then((r) => {
-      log.info("document-indexed", { documentId: document.id, status: r.status, chunks: r.chunks });
-    });
+    // Complete indexing before returning; serverless functions may be stopped
+    // as soon as the response is sent, so fire-and-forget work is not durable.
+    const indexed = await indexDocument(document.id);
+    log.info("document-indexed", { documentId: document.id, status: indexed.status, chunks: indexed.chunks });
 
     return NextResponse.json(
       {

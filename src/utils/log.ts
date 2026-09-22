@@ -11,7 +11,7 @@ function write(level: "info" | "warn" | "error", message: string, fields?: LogFi
     ts: new Date().toISOString(),
     level,
     msg: message,
-    ...fields,
+    ...safeFields(fields ?? {}),
   };
   const line = JSON.stringify(entry);
   if (level === "error") {
